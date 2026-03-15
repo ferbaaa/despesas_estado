@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Despesas — Prospect FIDC & Devlet FIDC</title>
+<style>
+  :root {
+    --bg1: #FFFFFF; --bg2: #F5F5F4; --bg3: #EBEBEA;
+    --tx1: #1A1A1A; --tx2: #6B6B6B; --tx3: #9B9B9B;
+    --bd2: #D4D4D4; --bd3: #E5E5E5;
+    --fs: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg1: #1A1A1A; --bg2: #252525; --bg3: #2E2E2E;
+      --tx1: #E5E5E5; --tx2: #A0A0A0; --tx3: #6B6B6B;
+      --bd2: #444444; --bd3: #363636;
+    }
+    body { background: #111111; color: #E5E5E5; }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--fs);
+    background: var(--bg1);
+    color: var(--tx1);
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .page-header {
+    text-align: center;
+    padding: 24px 0 20px;
+    border-bottom: 1.5px solid var(--bd3);
+    margin-bottom: 24px;
+  }
+  .page-header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--tx1);
+    margin-bottom: 4px;
+  }
+  .page-header p {
+    font-size: 13px;
+    color: var(--tx3);
+  }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div class="page-header">
+  <h1>Análise de Custos e Despesas</h1>
+  <p>Prospect FIDC & Devlet FIDC — Orçado vs Realizado 2026</p>
+</div>
+<div id="root"></div>
+<script type="text/babel">
+var useState = React.useState;
+
+
+
+function formatNum(v) {
+  if (v == null || isNaN(v)) return "—";
+  return "R$ " + Math.round(Math.abs(v)).toLocaleString("pt-BR");
+}
+
+function pctCalc(act, orc) {
+  var aA = Math.abs(act || 0);
+  var aO = Math.abs(orc || 0);
+  if (!aO) return act ? 999 : 0;
+  return ((aA - aO) / aO) * 100;
+}
+
+function pctFmt(act, orc) {
+  var p = pctCalc(act, orc);
+  if (Math.abs(p) > 900) return "N/O";
+  return (p >= 0 ? "+" : "") + Math.round(p) + "%";
+}
+
+function yoyFmt(a26, a25) {
+  if (!a25) return a26 ? "N/A" : "—";
+  var p = ((Math.abs(a26) - Math.abs(a25)) / Math.abs(a25)) * 100;
+  return (p >= 0 ? "+" : "") + Math.round(p) + "%";
+}
+
+function getStatus(act, orc) {
+  var aA = Math.abs(act || 0);
+  var aO = Math.abs(orc || 0);
+  if (!aO && !aA) return "neutral";
+  if (!aO) return aA > 0 ? "danger" : "neutral";
+  var d = ((aA - aO) / aO) * 100;
+  if (d > 15) return "danger";
+  if (d > 5) return "warning";
+  if (d < -10) return "success";
+  return "neutral";
+}
+
+var LIGHT_COLORS = {
+  danger: { bg: "#FEF2F2", tx: "#991B1B", bd: "#FECACA", dt: "#EF4444", pl: "#FEE2E2", pt: "#DC2626" },
+  warning: { bg: "#FFFBEB", tx: "#92400E", bd: "#FDE68A", dt: "#F59E0B", pl: "#FEF3C7", pt: "#D97706" },
+  success: { bg: "#ECFDF5", tx: "#065F46", bd: "#A7F3D0", dt: "#10B981", pl: "#D1FAE5", pt: "#059669" },
+  neutral: { bg: "var(--bg2)", tx: "var(--tx1)", bd: "var(--bd3)", dt: "#94A3B8", pl: "var(--bg3)", pt: "var(--tx2)" }
+};
+
+var DARK_COLORS = {
+  danger: { bg: "#1C0808", tx: "#FCA5A5", bd: "#450A0A", dt: "#F87171", pl: "#2D0F0F", pt: "#FCA5A5" },
+  warning: { bg: "#1A1005", tx: "#FCD34D", bd: "#451A03", dt: "#FBBF24", pl: "#261A06", pt: "#FCD34D" },
+  success: { bg: "#041F17", tx: "#6EE7B7", bd: "#064E3B", dt: "#34D399", pl: "#072E22", pt: "#6EE7B7" },
+  neutral: { bg: "var(--bg2)", tx: "var(--tx1)", bd: "var(--bd3)", dt: "#64748B", pl: "var(--bg3)", pt: "var(--tx2)" }
+};
+
+function isDark() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme:dark)").matches;
+}
+
+function getColors(status) {
+  var map = isDark() ? DARK_COLORS : LIGHT_COLORS;
+  return map[status] || map.neutral;
+}
+
+function hdrBg() { return isDark() ? "#0F2640" : "#1E3A5F"; }
+function hdrTx() { return "#E8F0FE"; }
+
+function Pill({ act, orc, size }) {
+  var s = getStatus(act, orc);
+  var c = getColors(s);
+  return (
+    <span style={{ display: "inline-block", padding: "2px 10px", borderRadius: 99, background: c.pl, color: c.pt, fontSize: size || 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+      {pctFmt(act, orc)}
+    </span>
+  );
+}
+
+function BarPair({ orc, act, maxVal }) {
+  var aO = Math.abs(orc || 0);
+  var aA = Math.abs(act || 0);
+  var mx = maxVal || Math.max(aO, aA, 1);
+  var s = getStatus(act, orc);
+  var c = getColors(s);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <div style={{ height: 6, borderRadius: 3, background: "var(--bd3)", width: (aO / mx * 100) + "%", minWidth: aO ? 3 : 0 }} />
+      <div style={{ height: 6, borderRadius: 3, background: c.dt, opacity: 0.75, width: (aA / mx * 100) + "%", minWidth: aA ? 3 : 0 }} />
+    </div>
+  );
+}
+
+/* ===================== DATA ===================== */
+
+var PROSPECT_DATA = {
+  "jan/2026": {
+    cats: [
+      { nome: "Pessoal — custo direto", orc: -81202, act: -53181, a25: -48685, subs: [
+        { nome: "Operação", orc: -28426, act: -20484, a25: -18887 },
+        { nome: "Cobrança", orc: -5538, act: -4657, a25: -12304 },
+        { nome: "Controladoria", orc: -6045, act: -5325, a25: -6391 },
+        { nome: "Crédito e cadastro", orc: -22626, act: -22714, a25: -11103 },
+        { nome: "Estruturadas/Form.", orc: -8275, act: 0, a25: -10558 },
+        { nome: "Tecnologia", orc: -10292, act: 0, a25: 0 }
+      ]},
+      { nome: "Pessoal — administrativo", orc: -100305, act: -105163, a25: -108139, subs: [
+        { nome: "Financeiro", orc: -24186, act: -20259, a25: -16573 },
+        { nome: "Diretoria", orc: -39107, act: -21019, a25: -18215 }
+      ]},
+      { nome: "Comercial e pós-venda", orc: -7327, act: -13694, a25: -18190 },
+      { nome: "Desenvolvimento do time", orc: -9893, act: -29311, a25: -4669 },
+      { nome: "Despesas diretoria", orc: -18549, act: -20149, a25: -20188 },
+      { nome: "Desp. operacionais", orc: -26061, act: -21970, a25: -21172 },
+      { nome: "Base física e veículos", orc: -23926, act: -23051, a25: -20426 },
+      { nome: "Tecnologia e imobilizado", orc: -5938, act: -20326, a25: -10383 },
+      { nome: "QuickSoft", orc: -18644, act: -15480, a25: -18404 },
+      { nome: "Marketing", orc: -3754, act: -501, a25: -21360 },
+      { nome: "Desp. financeiras", orc: -935604, act: -928198, a25: -972702 },
+      { nome: "Investimentos", orc: -2894, act: -2587, a25: -6934 },
+      { nome: "Processos jurídicos", orc: -12000, act: -3527, a25: -5665 }
+    ],
+    desvios: [
+      { nome: "Pessoal custo — Operação", orc: -28426, act: -20484, drivers: ["Salários CLT -48%: orçado R$8,5K, real R$4,4K", "Provisões 13º/férias não contabilizadas", "Remuneração variável orçada e não paga"] },
+      { nome: "Pessoal custo — Estruturadas", orc: -8275, act: 0, drivers: ["Área inteira sem gastos (vaga não preenchida)"] },
+      { nome: "Pessoal custo — Tecnologia", orc: -10292, act: 0, drivers: ["PJ Tecnologia (R$10K) orçado e não pago"] },
+      { nome: "Pessoal adm — Diretoria", orc: -39107, act: -21019, drivers: ["Salários PJ: orçado R$37,8K, pago R$18,5K"] },
+      { nome: "Pessoal adm — Financeiro", orc: -24186, act: -20259, drivers: ["Salários PJ: orçado R$16,5K, pago R$9,3K", "CLT acima do orçado: R$5,8K vs R$2,3K"] },
+      { nome: "Comercial e pós-venda", orc: -7327, act: -13694, drivers: ["Prest. serviço PV: R$11,7K vs orçado R$6K", "Viagens PV: R$2K vs orçado R$1,1K"] },
+      { nome: "Desenvolvimento do time", orc: -9893, act: -29311, drivers: ["ORA Estratégia Inovação: R$19,5K", "CMI Psicologia Integral (2x): R$3K", "Auxílios estudo/academia abaixo do orçado"] },
+      { nome: "Tecnologia e imobilizado", orc: -5938, act: -20326, drivers: ["Desenvolvedor CRM Zoho: R$10K não orçado", "Assinaturas Software: R$4,9K não orçado", "Acessórios/periféricos: R$2,6K vs R$200"] },
+      { nome: "QuickSoft", orc: -18644, act: -15480, drivers: ["IEPTB + VADU: orçado R$3,2K, real R$0"] },
+      { nome: "Marketing", orc: -3754, act: -501, drivers: ["Eventos: orçado R$1K, real R$0", "Endomarketing e marketing geral zerados"] },
+      { nome: "Processos jurídicos", orc: -12000, act: -3527, drivers: ["Recuperação de passivo 71% abaixo do orçado"] },
+      { nome: "Remuneração imóvel Itapemirim", orc: 0, act: -30064, drivers: ["INT-486 (R$29,9K) e INT-487 (R$154) — não orçada"] },
+      { nome: "Investimentos FIDC", orc: -2894, act: -2587, drivers: ["R$307 abaixo do orçado (-11%)"] }
+    ]
+  },
+  "fev/2026": {
+    cats: [
+      { nome: "Pessoal — custo direto", orc: -80922, act: -49632, a25: -45153, subs: [
+        { nome: "Operação", orc: -28356, act: -22560, a25: -16842 },
+        { nome: "Cobrança", orc: -5503, act: -4547, a25: -14666 },
+        { nome: "Controladoria", orc: -6010, act: -5114, a25: -1407 },
+        { nome: "Crédito e cadastro", orc: -22521, act: -17410, a25: -12237 },
+        { nome: "Estruturadas/Form.", orc: -8239, act: 0, a25: -14898 },
+        { nome: "Tecnologia", orc: -10292, act: 0, a25: 0 }
+      ]},
+      { nome: "Pessoal — administrativo", orc: -102903, act: -110962, a25: -120745, subs: [
+        { nome: "Financeiro", orc: -24151, act: -34098, a25: -15995 },
+        { nome: "Diretoria", orc: -39107, act: -24454, a25: -18278 }
+      ]},
+      { nome: "Comercial e pós-venda", orc: -7327, act: -11792, a25: -15062 },
+      { nome: "Desenvolvimento do time", orc: -9893, act: -17521, a25: -13562 },
+      { nome: "Despesas diretoria", orc: -21182, act: -22349, a25: -20876 },
+      { nome: "Desp. operacionais", orc: -26079, act: -20776, a25: -31949 },
+      { nome: "Base física e veículos", orc: -23926, act: -21942, a25: -22119 },
+      { nome: "Tecnologia e imobilizado", orc: -5938, act: -16220, a25: -9122 },
+      { nome: "QuickSoft", orc: -18644, act: -15412, a25: -16226 },
+      { nome: "Marketing", orc: -3119, act: -845, a25: -14759 },
+      { nome: "Desp. financeiras", orc: -809290, act: -818696, a25: -901954 },
+      { nome: "Investimentos", orc: -2894, act: -2995, a25: -3980 },
+      { nome: "Processos jurídicos", orc: -12000, act: -23303, a25: -202737 }
+    ],
+    desvios: [
+      { nome: "Pessoal custo — Estruturadas", orc: -8239, act: 0, drivers: ["Área sem gastos — vaga não preenchida"] },
+      { nome: "Pessoal custo — Tecnologia", orc: -10292, act: 0, drivers: ["PJ Tecnologia não pago"] },
+      { nome: "Pessoal custo — Crédito", orc: -22521, act: -17410, drivers: ["CLT: R$6,2K vs R$10,3K (-40%)", "Rescisão R$2,7K não orçada", "INSS/FGTS acima (+32%)"] },
+      { nome: "Pessoal adm — Financeiro", orc: -24151, act: -34098, drivers: ["Rescisão funcionário: R$13,7K não orçada", "CLT base: diferença de headcount"] },
+      { nome: "Pessoal adm — Diretoria", orc: -39107, act: -24454, drivers: ["Salários PJ: R$21,8K vs R$37,8K (-42%)"] },
+      { nome: "Comercial e pós-venda", orc: -7327, act: -11792, drivers: ["Prest. serviço PV: R$10,6K vs R$6K (+77%)"] },
+      { nome: "Desenvolvimento do time", orc: -9893, act: -17521, drivers: ["Capacitação profissional: R$9,7K", "CMI Psicologia Integral: R$3,1K", "Notion Labs: R$950"] },
+      { nome: "Tecnologia e imobilizado", orc: -5938, act: -16220, drivers: ["Desenvolvedor CRM Zoho: R$10K não orçado", "Assinaturas Software: R$3,6K não orçado"] },
+      { nome: "QuickSoft", orc: -18644, act: -15412, drivers: ["IEPTB + VADU: R$581 vs R$3,2K (-82%)"] },
+      { nome: "Marketing", orc: -3119, act: -845, drivers: ["Eventos e marketing zerados"] },
+      { nome: "Taxas op. estruturadas", orc: 0, act: -15554, drivers: ["IR/CSLL notas comerciais e AF (4 lançamentos)"] },
+      { nome: "Remuneração imóvel Itapemirim", orc: 0, act: -26056, drivers: ["INT-486 (R$25,9K) e INT-487 (R$133)"] },
+      { nome: "Processos jurídicos", orc: -12000, act: -23303, drivers: ["Recuperação passivo 94% acima do orçado"] }
+    ]
+  }
+};
+
+var PROSPECT_PESSOAL = {
+  "jan/2026": [
+    { area: "Operação", orc: -28426, act: -20484 }, { area: "Cobrança", orc: -5538, act: -4657 },
+    { area: "Controladoria", orc: -6045, act: -5325 }, { area: "Crédito/Cadastro", orc: -22626, act: -22714 },
+    { area: "Estruturadas", orc: -8275, act: 0 }, { area: "Tecnologia", orc: -10292, act: 0 },
+    { area: "Financeiro", orc: -24186, act: -20259 }, { area: "Diretoria", orc: -39107, act: -21019 }
+  ],
+  "fev/2026": [
+    { area: "Operação", orc: -28356, act: -22560 }, { area: "Cobrança", orc: -5503, act: -4547 },
+    { area: "Controladoria", orc: -6010, act: -5114 }, { area: "Crédito/Cadastro", orc: -22521, act: -17410 },
+    { area: "Estruturadas", orc: -8239, act: 0 }, { area: "Tecnologia", orc: -10292, act: 0 },
+    { area: "Financeiro", orc: -24151, act: -34098 }, { area: "Diretoria", orc: -39107, act: -24454 }
+  ]
+};
+
+var DEVLET_DATA = {
+  "jan/2026": {
+    cats: [
+      { nome: "Desp. administrativas", orc: -169376, act: -136555, a25: -24500 },
+      { nome: "Desp. financeiras", orc: -348675, act: -359447, a25: -101475 },
+      { nome: "(-) Receitas financeiras", orc: 0, act: 62972, a25: 42619 }
+    ],
+    desvios: [
+      { nome: "Serviços de terceiros", orc: -135587, act: -100000, drivers: ["Pagamento R$100K vs orçado R$136K — economia R$36K"] },
+      { nome: "Juros recebidos (rec. financ.)", orc: 0, act: 62972, drivers: ["Moras, encargos CCB e juros — R$63K não orçados"] },
+      { nome: "Despesas c/ cartório", orc: 0, act: -1851, drivers: ["Cartório R$1,9K não orçado"] },
+      { nome: "Valorização de cotas", orc: -348675, act: -359055, drivers: ["3% acima do orçado"] }
+    ]
+  },
+  "fev/2026": {
+    cats: [
+      { nome: "Desp. administrativas", orc: -164026, act: -148345, a25: -25286 },
+      { nome: "Desp. financeiras", orc: -340976, act: -325772, a25: -107514 },
+      { nome: "(-) Receitas financeiras", orc: 0, act: 83197, a25: 31329 }
+    ],
+    desvios: [
+      { nome: "Serviços de terceiros", orc: -129941, act: -100000, drivers: ["Pagamento R$100K vs orçado R$130K — economia R$30K"] },
+      { nome: "Auditoria", orc: 0, act: -14000, drivers: ["Pagamento auditoria R$14K não previsto"] },
+      { nome: "Juros recebidos (rec. financ.)", orc: 0, act: 83197, drivers: ["Encargos CCB R$38K, moras liquidação e depósito"] },
+      { nome: "Taxa Anbima", orc: 0, act: -486, drivers: ["Taxa não orçada"] },
+      { nome: "Custas judiciais", orc: 0, act: -74, drivers: ["Custas extrajudiciais não orçadas"] }
+    ]
+  }
+};
+
+/* ===================== YTD helpers ===================== */
+
+function buildYTDCats(jan, fev) {
+  var map = {};
+  var order = [];
+  [jan, fev].forEach(function (period) {
+    if (!period) return;
+    period.cats.forEach(function (c) {
+      if (!map[c.nome]) {
+        map[c.nome] = { nome: c.nome, orc: 0, act: 0, a25: 0, subs: null };
+        order.push(c.nome);
+        if (c.subs) {
+          map[c.nome].subs = c.subs.map(function (s) { return { nome: s.nome, orc: 0, act: 0, a25: 0 }; });
+        }
+      }
+      map[c.nome].orc += c.orc || 0;
+      map[c.nome].act += c.act || 0;
+      map[c.nome].a25 += c.a25 || 0;
+      if (c.subs && map[c.nome].subs) {
+        c.subs.forEach(function (s, i) {
+          if (map[c.nome].subs[i]) {
+            map[c.nome].subs[i].orc += s.orc || 0;
+            map[c.nome].subs[i].act += s.act || 0;
+            map[c.nome].subs[i].a25 += s.a25 || 0;
+          }
+        });
+      }
+    });
+  });
+  return order.map(function (n) { return map[n]; });
+}
+
+function buildYTDDesvios(jan, fev) {
+  var all = (jan ? jan.desvios : []).concat(fev ? fev.desvios : []);
+  var map = {};
+  var order = [];
+  all.forEach(function (d) {
+    if (!map[d.nome]) {
+      map[d.nome] = { nome: d.nome, orc: 0, act: 0, drivers: [] };
+      order.push(d.nome);
+    }
+    map[d.nome].orc += d.orc || 0;
+    map[d.nome].act += d.act || 0;
+    d.drivers.forEach(function (dr) {
+      if (map[d.nome].drivers.indexOf(dr) === -1) map[d.nome].drivers.push(dr);
+    });
+  });
+  return order.map(function (n) { return map[n]; });
+}
+
+function buildYTDPessoal(jan, fev) {
+  if (!jan) return fev || [];
+  return jan.map(function (j, i) {
+    var f = fev && fev[i] ? fev[i] : { orc: 0, act: 0 };
+    return { area: j.area, orc: (j.orc || 0) + (f.orc || 0), act: (j.act || 0) + (f.act || 0) };
+  });
+}
+
+/* ===================== COMPONENTS ===================== */
+
+var PERIODS = ["fev/2026", "jan/2026", "YTD"];
+
+function KPICard({ label, orc, act, accent }) {
+  var accents = {
+    blue: { bg: "#1E3A5F", tx: "#E8F0FE", bd: "#2D5A8E" },
+    teal: { bg: "#0D4F4F", tx: "#D1FAE5", bd: "#1A7A7A" },
+    purple: { bg: "#3B1F6E", tx: "#EDE9FE", bd: "#5B3A9E" }
+  };
+  var accentsDk = {
+    blue: { bg: "#0F2640", tx: "#93C5FD", bd: "#1E3A5F" },
+    teal: { bg: "#042F2E", tx: "#5EEAD4", bd: "#0D4F4F" },
+    purple: { bg: "#1E1145", tx: "#C4B5FD", bd: "#3B1F6E" }
+  };
+  var cc = isDark() ? (accentsDk[accent] || accentsDk.blue) : (accents[accent] || accents.blue);
+  var s = getStatus(act, orc);
+  var sc = getColors(s);
+  var delta = Math.abs(act || 0) - Math.abs(orc || 0);
+
+  return (
+    <div style={{ background: cc.bg, border: "1.5px solid " + cc.bd, borderRadius: 14, padding: "18px 20px", color: cc.tx }}>
+      <div style={{ fontSize: 12, fontWeight: 600, opacity: 0.7, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px", lineHeight: 1.1 }}>{formatNum(act)}</div>
+      <div style={{ fontSize: 12, opacity: 0.5, marginTop: 6 }}>Orçado: {formatNum(orc)}</div>
+      <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 12px", borderRadius: 99, background: sc.pl }}>
+        <span style={{ width: 6, height: 6, borderRadius: 99, background: sc.dt }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: sc.pt }}>
+          {(delta > 0 ? "+" : "") + formatNum(delta) + " · " + pctFmt(act, orc)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CategoryTable({ cats }) {
+  var _a = useState({}), exp = _a[0], setExp = _a[1];
+  var maxVal = 1;
+  cats.forEach(function (c) {
+    var v = Math.max(Math.abs(c.orc || 0), Math.abs(c.act || 0));
+    if (v > maxVal) maxVal = v;
+  });
+  var totalOrc = 0;
+  var totalAct = 0;
+  cats.forEach(function (c) { totalOrc += c.orc || 0; totalAct += c.act || 0; });
+
+  var headers = ["Categoria", "Orçado", "Realizado", "Orç vs Real", "Var %", "YoY"];
+  var headerAligns = ["left", "right", "right", "center", "right", "right"];
+  var headerWidths = ["30%", null, null, "16%", null, null];
+
+  return (
+    <div style={{ borderRadius: 14, overflow: "hidden", border: "1.5px solid var(--bd3)" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ background: hdrBg() }}>
+            {headers.map(function (h, i) {
+              return (
+                <th key={i} style={{
+                  textAlign: headerAligns[i], padding: "12px 14px", fontSize: 11, fontWeight: 700,
+                  color: hdrTx(), textTransform: "uppercase", letterSpacing: 0.8,
+                  width: headerWidths[i] || undefined
+                }}>{h}</th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {cats.filter(function (c) { return c.act || c.orc; }).map(function (c, i) {
+            var hasSubs = c.subs && c.subs.length > 0;
+            var isOpen = exp[i];
+            var s = getStatus(c.act, c.orc);
+            var sc = getColors(s);
+            var isDeviant = Math.abs(pctCalc(c.act, c.orc)) > 10;
+
+            return (
+              <React.Fragment key={i}>
+                <tr
+                  onClick={hasSubs ? function () { setExp(function (prev) { var n = {}; for (var k in prev) n[k] = prev[k]; n[i] = !prev[i]; return n; }); } : undefined}
+                  style={{
+                    borderTop: "1px solid var(--bd3)",
+                    cursor: hasSubs ? "pointer" : "default",
+                    background: isDeviant ? sc.bg : "transparent"
+                  }}
+                >
+                  <td style={{ padding: "12px 14px", fontWeight: 600, fontSize: 13, color: isDeviant ? sc.tx : undefined }}>
+                    {hasSubs ? <span style={{ fontSize: 9, marginRight: 6, color: "var(--tx3)" }}>{isOpen ? "▾" : "▸"}</span> : null}
+                    {c.nome}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "12px 14px", fontSize: 13, color: "var(--tx2)" }}>{formatNum(c.orc)}</td>
+                  <td style={{ textAlign: "right", padding: "12px 14px", fontSize: 13, fontWeight: 600 }}>{formatNum(c.act)}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <BarPair orc={c.orc} act={c.act} maxVal={maxVal} />
+                  </td>
+                  <td style={{ textAlign: "right", padding: "12px 14px" }}>
+                    <Pill act={c.act} orc={c.orc} />
+                  </td>
+                  <td style={{ textAlign: "right", padding: "12px 14px", fontSize: 12, color: "var(--tx2)" }}>
+                    {c.a25 != null ? yoyFmt(c.act, c.a25) : "—"}
+                  </td>
+                </tr>
+                {isOpen && c.subs ? c.subs.map(function (sub, j) {
+                  var ss = getStatus(sub.act, sub.orc);
+                  var ssc = getColors(ss);
+                  var subDev = Math.abs(pctCalc(sub.act, sub.orc)) > 10;
+                  return (
+                    <tr key={i + "-" + j} style={{
+                      borderTop: "1px solid var(--bd3)",
+                      background: subDev ? ssc.bg : "var(--bg2)"
+                    }}>
+                      <td style={{ padding: "9px 14px 9px 44px", fontSize: 12, color: subDev ? ssc.tx : "var(--tx2)" }}>{sub.nome}</td>
+                      <td style={{ textAlign: "right", padding: "9px 14px", fontSize: 12, color: "var(--tx3)" }}>{formatNum(sub.orc)}</td>
+                      <td style={{ textAlign: "right", padding: "9px 14px", fontSize: 12 }}>{formatNum(sub.act)}</td>
+                      <td style={{ padding: "9px 14px" }}>
+                        <BarPair orc={sub.orc} act={sub.act} maxVal={maxVal * 0.4} />
+                      </td>
+                      <td style={{ textAlign: "right", padding: "9px 14px" }}>
+                        <Pill act={sub.act} orc={sub.orc} size={11} />
+                      </td>
+                      <td style={{ textAlign: "right", padding: "9px 14px", fontSize: 11, color: "var(--tx3)" }}>
+                        {sub.a25 != null ? yoyFmt(sub.act, sub.a25) : "—"}
+                      </td>
+                    </tr>
+                  );
+                }) : null}
+              </React.Fragment>
+            );
+          })}
+          <tr style={{ borderTop: "2px solid var(--bd2)", background: hdrBg() }}>
+            <td style={{ padding: "12px 14px", fontWeight: 700, fontSize: 13, color: hdrTx() }}>Total</td>
+            <td style={{ textAlign: "right", padding: "12px 14px", fontSize: 13, fontWeight: 700, color: hdrTx(), opacity: 0.7 }}>{formatNum(totalOrc)}</td>
+            <td style={{ textAlign: "right", padding: "12px 14px", fontSize: 13, fontWeight: 700, color: hdrTx() }}>{formatNum(totalAct)}</td>
+            <td />
+            <td style={{ textAlign: "right", padding: "12px 14px" }}><Pill act={totalAct} orc={totalOrc} /></td>
+            <td />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DesvioCard({ d, isOpen, onToggle }) {
+  var delta = Math.abs(d.act || 0) - Math.abs(d.orc || 0);
+  var isOver = delta > 0;
+  var sKey = isOver ? (delta > 30000 ? "danger" : "warning") : "success";
+  var c = getColors(sKey);
+
+  return (
+    <div style={{ border: "1.5px solid " + c.bd, borderRadius: 14, marginBottom: 8, overflow: "hidden", background: c.bg }}>
+      <div onClick={onToggle} style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <span style={{ width: 10, height: 10, borderRadius: 99, background: c.dt, flexShrink: 0 }} />
+        <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: c.tx }}>{d.nome}</span>
+        <span style={{ padding: "3px 12px", borderRadius: 99, background: c.pl, color: c.pt, fontSize: 12, fontWeight: 700 }}>
+          {(isOver ? "+" : "-") + formatNum(delta)}
+        </span>
+        <span style={{ fontSize: 10, color: c.tx, opacity: 0.4 }}>{isOpen ? "▾" : "▸"}</span>
+      </div>
+      {isOpen ? (
+        <div style={{ borderTop: "1px solid " + c.bd, padding: "12px 16px" }}>
+          <div style={{ fontSize: 12, color: c.tx, opacity: 0.6, marginBottom: 8 }}>
+            {"Orçado: " + formatNum(d.orc) + " · Realizado: " + formatNum(d.act) + " · Var: " + pctFmt(d.act, d.orc)}
+          </div>
+          {d.drivers.map(function (dr, j) {
+            return (
+              <div key={j} style={{ padding: "5px 0", borderTop: j ? ("1px solid " + c.bd) : "none", fontSize: 12, color: c.tx, display: "flex", alignItems: "flex-start", gap: 6 }}>
+                <span style={{ color: c.dt, flexShrink: 0, marginTop: 2 }}>•</span>
+                <span>{dr}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DesvioSection({ desvios }) {
+  var _a = useState(0), openIdx = _a[0], setOpenIdx = _a[1];
+  var over = desvios.filter(function (d) { return Math.abs(d.act || 0) > Math.abs(d.orc || 0); });
+  var under = desvios.filter(function (d) { return Math.abs(d.act || 0) <= Math.abs(d.orc || 0); });
+
+  var globalIdx = 0;
+  return (
+    <div>
+      {over.length > 0 ? (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#DC2626", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: "#DC2626" }} />
+            {"Acima do orçado (" + over.length + ")"}
+          </div>
+          {over.map(function (d) {
+            var idx = globalIdx++;
+            return <DesvioCard key={idx} d={d} isOpen={openIdx === idx} onToggle={function () { setOpenIdx(openIdx === idx ? -1 : idx); }} />;
+          })}
+        </div>
+      ) : null}
+      {under.length > 0 ? (
+        <div style={{ marginTop: over.length > 0 ? 16 : 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#059669", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: "#059669" }} />
+            {"Abaixo do orçado (" + under.length + ")"}
+          </div>
+          {under.map(function (d) {
+            var idx = globalIdx++;
+            return <DesvioCard key={idx} d={d} isOpen={openIdx === idx} onToggle={function () { setOpenIdx(openIdx === idx ? -1 : idx); }} />;
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PessoalGrid({ data }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))", gap: 10 }}>
+      {data.map(function (d, i) {
+        var s = getStatus(d.act, d.orc);
+        var c = getColors(s);
+        var aO = Math.abs(d.orc || 0);
+        var aA = Math.abs(d.act || 0);
+        var pBar = aO ? Math.min(aA / aO * 100, 150) : 0;
+        return (
+          <div key={i} style={{ background: c.bg, border: "1.5px solid " + c.bd, borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: c.tx, opacity: 0.6, marginBottom: 4 }}>{d.area}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: c.tx }}>{formatNum(d.act)}</div>
+            <div style={{ fontSize: 11, color: c.tx, opacity: 0.4, marginTop: 2 }}>Orç: {formatNum(d.orc)}</div>
+            {aO > 0 ? (
+              <div style={{ marginTop: 8, height: 5, borderRadius: 3, background: c.bd }}>
+                <div style={{ height: 5, borderRadius: 3, background: c.dt, opacity: 0.7, width: Math.min(pBar, 100) + "%" }} />
+              </div>
+            ) : null}
+            <div style={{ marginTop: 6 }}><Pill act={d.act} orc={d.orc} /></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ===================== PAGE VIEWS ===================== */
+
+function EntityView({ entityData, entityPessoal, period, showPessoal }) {
+  var jan = entityData["jan/2026"];
+  var fev = entityData["fev/2026"];
+  var isYTD = period === "YTD";
+
+  var cats = isYTD ? buildYTDCats(jan, fev) : (entityData[period] ? entityData[period].cats : []);
+  var desvios = isYTD ? buildYTDDesvios(jan, fev) : (entityData[period] ? entityData[period].desvios : []);
+  var pessoal = null;
+  if (showPessoal && entityPessoal) {
+    pessoal = isYTD ? buildYTDPessoal(entityPessoal["jan/2026"], entityPessoal["fev/2026"]) : (entityPessoal[period] || null);
+  }
+
+  if (!cats || !cats.length) return <div style={{ padding: 20, color: "var(--tx2)" }}>Sem dados para este período</div>;
+
+  var totalOrc = 0;
+  var totalAct = 0;
+  cats.forEach(function (c) { totalOrc += c.orc || 0; totalAct += c.act || 0; });
+  var fin = cats.find(function (c) { return c.nome.indexOf("financeira") >= 0 && c.nome.indexOf("(") !== 0; });
+  var opOrc = totalOrc - (fin ? fin.orc || 0 : 0);
+  var opAct = totalAct - (fin ? fin.act || 0 : 0);
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12, marginBottom: 24 }}>
+        <KPICard label="Total custos e despesas" orc={totalOrc} act={totalAct} accent="blue" />
+        <KPICard label="Operacionais (ex-financ.)" orc={opOrc} act={opAct} accent="teal" />
+        <KPICard label="Financeiras" orc={fin ? fin.orc : 0} act={fin ? fin.act : 0} accent="purple" />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 14, height: 6, borderRadius: 3, background: "var(--bd2)", display: "block" }} />
+          <span style={{ fontSize: 11, color: "var(--tx3)", fontWeight: 500 }}>Orçado</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 14, height: 6, borderRadius: 3, background: "#3B82F6", display: "block" }} />
+          <span style={{ fontSize: 11, color: "var(--tx3)", fontWeight: 500 }}>Realizado</span>
+        </div>
+        <span style={{ fontSize: 11, color: "var(--tx3)", marginLeft: "auto" }}>Linhas coloridas = desvio &gt;10%</span>
+      </div>
+
+      <CategoryTable cats={cats} />
+
+      {desvios && desvios.length > 0 ? (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{"Desvios >10% — " + desvios.length + " itens"}</div>
+          <DesvioSection desvios={desvios} />
+        </div>
+      ) : null}
+
+      {pessoal ? (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Pessoal por área</div>
+          <PessoalGrid data={pessoal} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ConsolidatedView({ period }) {
+  var jan_p = PROSPECT_DATA["jan/2026"];
+  var fev_p = PROSPECT_DATA["fev/2026"];
+  var jan_d = DEVLET_DATA["jan/2026"];
+  var fev_d = DEVLET_DATA["fev/2026"];
+  var isYTD = period === "YTD";
+
+  var pCats = isYTD ? buildYTDCats(jan_p, fev_p) : (PROSPECT_DATA[period] ? PROSPECT_DATA[period].cats : []);
+  var dCats = isYTD ? buildYTDCats(jan_d, fev_d) : (DEVLET_DATA[period] ? DEVLET_DATA[period].cats : []);
+
+  var pO = 0, pA = 0, dO = 0, dA = 0;
+  pCats.forEach(function (c) { pO += c.orc || 0; pA += c.act || 0; });
+  dCats.forEach(function (c) { dO += c.orc || 0; dA += c.act || 0; });
+  var tO = pO + dO, tA = pA + dA;
+  var mx = Math.max(Math.abs(pO), Math.abs(pA), Math.abs(dO), Math.abs(dA), 1);
+  var items = [{ nome: "Prospect FIDC", orc: pO, act: pA }, { nome: "Devlet FIDC", orc: dO, act: dA }];
+
+  var headers = ["Empresa", "Orçado", "Realizado", "Orç vs Real", "Δ R$", "Var %"];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12, marginBottom: 24 }}>
+        <KPICard label="Consolidado" orc={tO} act={tA} accent="blue" />
+        <KPICard label="Prospect" orc={pO} act={pA} accent="teal" />
+        <KPICard label="Devlet" orc={dO} act={dA} accent="purple" />
+      </div>
+
+      <div style={{ borderRadius: 14, overflow: "hidden", border: "1.5px solid var(--bd3)" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: hdrBg() }}>
+              {headers.map(function (h, i) {
+                return (
+                  <th key={i} style={{
+                    textAlign: i === 0 ? "left" : i === 3 ? "center" : "right",
+                    padding: "12px 14px", fontSize: 11, fontWeight: 700,
+                    color: hdrTx(), textTransform: "uppercase", letterSpacing: 0.8
+                  }}>{h}</th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(function (it, i) {
+              var s = getStatus(it.act, it.orc);
+              var sc = getColors(s);
+              var delta = Math.abs(it.act) - Math.abs(it.orc);
+              return (
+                <tr key={i} style={{ borderTop: "1px solid var(--bd3)" }}>
+                  <td style={{ padding: 14, fontWeight: 700, fontSize: 14 }}>{it.nome}</td>
+                  <td style={{ textAlign: "right", padding: 14, fontSize: 13, color: "var(--tx2)" }}>{formatNum(it.orc)}</td>
+                  <td style={{ textAlign: "right", padding: 14, fontSize: 14, fontWeight: 700 }}>{formatNum(it.act)}</td>
+                  <td style={{ padding: 14 }}>
+                    <BarPair orc={it.orc} act={it.act} maxVal={mx} />
+                  </td>
+                  <td style={{ textAlign: "right", padding: 14, fontSize: 13, fontWeight: 500, color: sc.tx }}>
+                    {(delta > 0 ? "+" : "") + formatNum(delta)}
+                  </td>
+                  <td style={{ textAlign: "right", padding: 14 }}>
+                    <Pill act={it.act} orc={it.orc} />
+                  </td>
+                </tr>
+              );
+            })}
+            <tr style={{ borderTop: "2px solid var(--bd2)", background: hdrBg() }}>
+              <td style={{ padding: 14, fontWeight: 700, fontSize: 14, color: hdrTx() }}>Consolidado</td>
+              <td style={{ textAlign: "right", padding: 14, fontSize: 13, fontWeight: 700, color: hdrTx(), opacity: 0.7 }}>{formatNum(tO)}</td>
+              <td style={{ textAlign: "right", padding: 14, fontSize: 14, fontWeight: 700, color: hdrTx() }}>{formatNum(tA)}</td>
+              <td /><td />
+              <td style={{ textAlign: "right", padding: 14 }}><Pill act={tA} orc={tO} /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ===================== MAIN APP ===================== */
+
+function App() {
+  var _a = useState("prospect"), tab = _a[0], setTab = _a[1];
+  var _b = useState("fev/2026"), period = _b[0], setPeriod = _b[1];
+
+  var tabs = [
+    { id: "consolidado", label: "Consolidado" },
+    { id: "prospect", label: "Prospect" },
+    { id: "devlet", label: "Devlet" }
+  ];
+
+  var tabColors = {
+    consolidado: { bg: "#1E3A5F", bgDk: "#0F2640", tx: "#E8F0FE" },
+    prospect: { bg: "#0D4F4F", bgDk: "#042F2E", tx: "#D1FAE5" },
+    devlet: { bg: "#3B1F6E", bgDk: "#1E1145", tx: "#EDE9FE" }
+  };
+
+  return (
+    <div style={{ fontFamily: "var(--fs)", padding: "0.5rem 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {tabs.map(function (t) {
+            var isActive = tab === t.id;
+            var tc = tabColors[t.id];
+            return (
+              <button key={t.id} onClick={function () { setTab(t.id); }} style={{
+                fontSize: 13, fontWeight: 700, padding: "10px 22px", borderRadius: 10,
+                background: isActive ? (isDark() ? tc.bgDk : tc.bg) : "var(--bg2)",
+                color: isActive ? tc.tx : "var(--tx2)",
+                border: isActive ? "none" : "1.5px solid var(--bd3)",
+                cursor: "pointer",
+                boxShadow: isActive ? "0 2px 8px rgba(0,0,0,0.15)" : "none"
+              }}>{t.label}</button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--bg2)", borderRadius: 10, padding: 4, border: "1px solid var(--bd3)" }}>
+          {PERIODS.map(function (p) {
+            var isActive = period === p;
+            return (
+              <button key={p} onClick={function () { setPeriod(p); }} style={{
+                fontSize: 12, fontWeight: isActive ? 700 : 500, padding: "7px 16px", borderRadius: 8,
+                background: isActive ? (isDark() ? "#0F2640" : "#1E3A5F") : "transparent",
+                color: isActive ? "#E8F0FE" : "var(--tx2)",
+                border: "none", cursor: "pointer"
+              }}>{p}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: "var(--tx3)", marginBottom: 18, letterSpacing: 0.3 }}>
+        {"Análise custos e despesas · Orçado vs Realizado · " + (period === "YTD" ? "Jan + Fev 2026" : period)}
+      </div>
+
+      {tab === "consolidado" ? <ConsolidatedView period={period} /> : null}
+      {tab === "prospect" ? <EntityView entityData={PROSPECT_DATA} entityPessoal={PROSPECT_PESSOAL} period={period} showPessoal={true} /> : null}
+      {tab === "devlet" ? <EntityView entityData={DEVLET_DATA} entityPessoal={null} period={period} showPessoal={false} /> : null}
+    </div>
+  );
+}
+
+
+ReactDOM.render(React.createElement(App), document.getElementById("root"));
+</script>
+</body>
+</html>
